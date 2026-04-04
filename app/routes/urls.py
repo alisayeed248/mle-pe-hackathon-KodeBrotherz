@@ -1,5 +1,8 @@
+import os
+import json
 from datetime import datetime, timezone
 
+import redis
 from flask import Blueprint, jsonify, redirect, request
 
 from app.errors import ConflictError, GoneError, NotFoundError, ValidationError
@@ -12,6 +15,14 @@ from app.services import (
 from app.db_instrumentation import timed_db_operation
 
 urls_bp = Blueprint("urls", __name__)
+
+# Redis connection
+redis_client = redis.Redis(
+    host=os.getenv("REDIS_HOST", "localhost"),
+    port=int(os.getenv("REDIS_PORT", 6379)),
+    decode_responses=True,
+)
+CACHE_TTL = 300  # cache entries for 5 minutes
 
 
 @urls_bp.route("/shorten", methods=["POST"])
@@ -35,13 +46,11 @@ def shorten_url():
     # Generate or use custom code
     if custom_code:
         short_code = custom_code.strip()
-        # Check if already exists
         with timed_db_operation("select"):
             exists = URL.select().where(URL.short_code == short_code).exists()
         if exists:
             raise ConflictError("Short code already exists")
     else:
-        # Generate unique code (retry on collision)
         for _ in range(10):
             short_code = generate_short_code()
             with timed_db_operation("select"):
@@ -58,16 +67,19 @@ def shorten_url():
             short_code=short_code,
         )
 
-    # Build the short URL
+    # Cache the new URL immediately
+    cache_data = {
+        "original_url": url_record.original_url,
+        "is_active": url_record.is_active,
+        "expires_at": url_record.expires_at.isoformat() if url_record.expires_at else None,
+        "id": url_record.id,
+    }
+    redis_client.setex(f"url:{short_code}", CACHE_TTL, json.dumps(cache_data))
+
     short_url = f"{request.host_url}{short_code}"
 
     return (
-        jsonify(
-            {
-                "short_code": short_code,
-                "short_url": short_url,
-            }
-        ),
+        jsonify({"short_code": short_code, "short_url": short_url}),
         201,
     )
 
@@ -75,21 +87,43 @@ def shorten_url():
 @urls_bp.route("/<code>", methods=["GET"])
 def redirect_url(code: str):
     """Redirect to the original URL."""
+    # Check cache first
+    cached = redis_client.get(f"url:{code}")
+    if cached:
+        data = json.loads(cached)
+        # Check if expired
+        if data["expires_at"] and datetime.fromisoformat(data["expires_at"]) < datetime.now(timezone.utc):
+            raise GoneError("Short URL has expired")
+        # Check if active
+        if not data["is_active"]:
+            raise GoneError("Short URL is no longer active")
+        # Increment click count in DB (async-ish, don't block redirect)
+        with timed_db_operation("update"):
+            URL.update(click_count=URL.click_count + 1).where(URL.id == data["id"]).execute()
+        return redirect(data["original_url"], code=302)
+
+    # Cache miss - hit the database
     with timed_db_operation("select"):
         url_record = URL.select().where(URL.short_code == code).first()
 
     if not url_record:
         raise NotFoundError("Short URL not found")
 
-    # Check if expired
     if url_record.expires_at and url_record.expires_at < datetime.now(timezone.utc):
         raise GoneError("Short URL has expired")
 
-    # Check if active
     if not url_record.is_active:
         raise GoneError("Short URL is no longer active")
 
-    # Increment click count
+    # Store in cache for next time
+    cache_data = {
+        "original_url": url_record.original_url,
+        "is_active": url_record.is_active,
+        "expires_at": url_record.expires_at.isoformat() if url_record.expires_at else None,
+        "id": url_record.id,
+    }
+    redis_client.setex(f"url:{code}", CACHE_TTL, json.dumps(cache_data))
+
     with timed_db_operation("update"):
         URL.update(click_count=URL.click_count + 1).where(URL.id == url_record.id).execute()
 
