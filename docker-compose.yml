@@ -1,20 +1,58 @@
 services:
-  app:
-    build: .
+  # Nginx - Load balancer & reverse proxy (entry point)
+  nginx:
+    image: nginx:alpine
     ports:
-      - "5000:5000"
-    environment:
+      - "80:80"
+    volumes:
+      - ./infra/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./static:/usr/share/nginx/html:ro
+    depends_on:
+      - app1
+      - app2
+      - app3
+    restart: always
+
+  # Flask App Replicas
+  app1:
+    build: .
+    environment: &app-env
       - FLASK_DEBUG=false
       - DATABASE_NAME=hackathon_db
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
       - DATABASE_USER=postgres
       - DATABASE_PASSWORD=postgres
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     restart: always
 
+  app2:
+    build: .
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: always
+
+  app3:
+    build: .
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: always
+
+  # PostgreSQL - Primary database
   postgres:
     image: postgres:16-alpine
     environment:
@@ -28,6 +66,46 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: always
+
+  # Redis - Caching layer
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    restart: always
+
+  # Prometheus - Metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    restart: always
+
+  # Grafana - Dashboards
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: always
 
 volumes:
   postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
