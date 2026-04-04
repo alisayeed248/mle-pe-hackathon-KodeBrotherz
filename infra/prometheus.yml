@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Scrape Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Scrape Flask apps (we'll add /metrics endpoint next hour)
+  - job_name: 'flask'
+    static_configs:
+      - targets: ['app1:5000', 'app2:5000', 'app3:5000']
+    metrics_path: /metrics
