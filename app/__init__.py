@@ -15,10 +15,13 @@ def create_app():
 
     from app import models  # noqa: F401 - registers models with Peewee
 
-    # Create tables if they don't exist
+    # Create tables if they don't exist (handle race condition with multiple workers)
     from app.models.url import URL
-
-    db.create_tables([URL], safe=True)
+    try:
+        db.create_tables([URL], safe=True)
+    except Exception:
+        # Table already exists or being created by another worker - that's fine
+        pass
 
     register_error_handlers(app)
     register_routes(app)
