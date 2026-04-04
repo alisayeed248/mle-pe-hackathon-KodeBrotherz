@@ -13,3 +13,7 @@ scrape_configs:
     static_configs:
       - targets: ['app1:5000', 'app2:5000', 'app3:5000']
     metrics_path: /metrics
+
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
