@@ -1,4 +1,7 @@
-from flask import jsonify
+from flask import jsonify, request
+from app.logging_config import get_logger
+
+logger = get_logger("errors")
 
 
 class APIError(Exception):
@@ -43,6 +46,12 @@ def register_error_handlers(app):
 
     @app.errorhandler(APIError)
     def handle_api_error(error):
+        logger.warning("API error", extra={
+            "component": "errors",
+            "error_type": error.__class__.__name__,
+            "status_code": error.status_code,
+            "path": request.path,
+        })
         return jsonify({"error": error.message}), error.status_code
 
     @app.errorhandler(400)
@@ -59,5 +68,11 @@ def register_error_handlers(app):
 
     @app.errorhandler(500)
     def handle_500(error):
+        logger.error("Internal server error", extra={
+            "component": "errors",
+            "error_type": "InternalServerError",
+            "status_code": 500,
+            "path": request.path,
+        }, exc_info=True)
         # Never expose stack traces
         return jsonify({"error": "Internal server error"}), 500
