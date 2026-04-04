@@ -1,23 +1,25 @@
-FROM python:3.13-slim AS builder
-
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-WORKDIR /app
-
-COPY pyproject.toml uv.lock ./
-
-RUN uv sync --frozen --no-dev
-
 FROM python:3.13-slim
 
 WORKDIR /app
 
-COPY --from=builder /app/.venv /app/.venv
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies
+RUN uv sync --frozen --no-dev
+
+# Copy application code
 COPY . .
 
-ENV PATH="/app/.venv/bin:$PATH"
+# Create prometheus multiprocess directory
+ENV PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus_multiproc
+RUN mkdir -p /tmp/prometheus_multiproc
 
+# Expose port
 EXPOSE 5000
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--access-logfile", "-", "run:app"]
+# Run with gunicorn
+CMD ["uv", "run", "gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--access-logfile", "-", "run:app"]

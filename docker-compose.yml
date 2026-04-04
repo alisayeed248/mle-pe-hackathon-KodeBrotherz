@@ -13,6 +13,15 @@ services:
       - app3
     restart: always
 
+  # Nginx Prometheus Exporter
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    command:
+      - '-nginx.scrape-uri=http://nginx:80/nginx_status'
+    depends_on:
+      - nginx
+    restart: always
+
   # Flask App Replicas
   app1:
     build: .
