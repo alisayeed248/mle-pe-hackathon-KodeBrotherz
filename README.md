@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # MLH PE Hackathon — Flask + Peewee + PostgreSQL Template
 
 A minimal hackathon starter template. You get the scaffolding and database wiring — you build the models, routes, and CSV loading logic.
@@ -190,3 +191,7 @@ query = (Product
 - Wrap bulk inserts in `db.atomic()` for transactional safety and performance.
 - The template uses `teardown_appcontext` for connection cleanup, so connections are closed even when requests fail.
 - Check `.env.example` for all available configuration options.
+=======
+# mle-pe-hackathon-KodeBrotherz
+our service for mle-pe-hackathon: sayeed + naimul
+>>>>>>> 58bd72911713d90b286b989712ce92a253a26b97
