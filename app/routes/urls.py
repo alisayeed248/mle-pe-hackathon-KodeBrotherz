@@ -9,6 +9,7 @@ from app.services import (
     validate_custom_code,
     validate_url,
 )
+from app.db_instrumentation import timed_db_operation
 
 urls_bp = Blueprint("urls", __name__)
 
@@ -35,22 +36,27 @@ def shorten_url():
     if custom_code:
         short_code = custom_code.strip()
         # Check if already exists
-        if URL.select().where(URL.short_code == short_code).exists():
+        with timed_db_operation("select"):
+            exists = URL.select().where(URL.short_code == short_code).exists()
+        if exists:
             raise ConflictError("Short code already exists")
     else:
         # Generate unique code (retry on collision)
         for _ in range(10):
             short_code = generate_short_code()
-            if not URL.select().where(URL.short_code == short_code).exists():
+            with timed_db_operation("select"):
+                exists = URL.select().where(URL.short_code == short_code).exists()
+            if not exists:
                 break
         else:
             raise ValidationError("Failed to generate unique short code")
 
     # Create the URL record
-    url_record = URL.create(
-        original_url=original_url.strip(),
-        short_code=short_code,
-    )
+    with timed_db_operation("insert"):
+        url_record = URL.create(
+            original_url=original_url.strip(),
+            short_code=short_code,
+        )
 
     # Build the short URL
     short_url = f"{request.host_url}{short_code}"
@@ -69,7 +75,8 @@ def shorten_url():
 @urls_bp.route("/<code>", methods=["GET"])
 def redirect_url(code: str):
     """Redirect to the original URL."""
-    url_record = URL.select().where(URL.short_code == code).first()
+    with timed_db_operation("select"):
+        url_record = URL.select().where(URL.short_code == code).first()
 
     if not url_record:
         raise NotFoundError("Short URL not found")
@@ -83,7 +90,8 @@ def redirect_url(code: str):
         raise GoneError("Short URL is no longer active")
 
     # Increment click count
-    URL.update(click_count=URL.click_count + 1).where(URL.id == url_record.id).execute()
+    with timed_db_operation("update"):
+        URL.update(click_count=URL.click_count + 1).where(URL.id == url_record.id).execute()
 
     return redirect(url_record.original_url, code=302)
 
@@ -91,7 +99,8 @@ def redirect_url(code: str):
 @urls_bp.route("/<code>/stats", methods=["GET"])
 def url_stats(code: str):
     """Get statistics for a shortened URL."""
-    url_record = URL.select().where(URL.short_code == code).first()
+    with timed_db_operation("select"):
+        url_record = URL.select().where(URL.short_code == code).first()
 
     if not url_record:
         raise NotFoundError("Short URL not found")
