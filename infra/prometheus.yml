@@ -2,16 +2,26 @@ global:
   scrape_interval: 5s
   evaluation_interval: 5s
 
+# Alert rules file
+rule_files:
+  - /etc/prometheus/alert_rules.yml
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
 scrape_configs:
   # Scrape Prometheus itself
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
 
-  # Scrape Flask apps (we'll add /metrics endpoint next hour)
+  # Scrape Flask apps
   - job_name: 'flask'
     static_configs:
-      - targets: ['app1:5000', 'app2:5000', 'app3:5000']
+      - targets: ['app1:5000', 'app2:5000', 'app3:5000', 'app4:5000', 'app5:5000']
     metrics_path: /metrics
 
   - job_name: 'nginx'

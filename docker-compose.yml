@@ -115,10 +115,44 @@ services:
       - "9090:9090"
     volumes:
       - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+    depends_on:
+      - alertmanager
+    restart: always
+
+  # Alertmanager - Alert routing and notifications
+  alertmanager:
+    image: prom/alertmanager:latest
+    ports:
+      - "9093:9093"
+    environment:
+      - SMTP_FROM=${SMTP_FROM}
+      - SMTP_TO=${SMTP_TO}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+    volumes:
+      - ./infra/alertmanager.yml:/etc/alertmanager/alertmanager.template.yml:ro
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        sed -e "s|\$${SMTP_FROM}|$$SMTP_FROM|g" \
+            -e "s|\$${SMTP_TO}|$$SMTP_TO|g" \
+            -e "s|\$${SMTP_PASSWORD}|$$SMTP_PASSWORD|g" \
+            /etc/alertmanager/alertmanager.template.yml > /tmp/alertmanager.yml && \
+        /bin/alertmanager --config.file=/tmp/alertmanager.yml
+    depends_on:
+      - discord-webhook
+    restart: always
+
+  # Discord webhook adapter (translates Alertmanager format to Discord format)
+  discord-webhook:
+    image: benjojo/alertmanager-discord
+    environment:
+      - DISCORD_WEBHOOK=${DISCORD_WEBHOOK_URL}
     restart: always
 
   # Grafana - Dashboards
