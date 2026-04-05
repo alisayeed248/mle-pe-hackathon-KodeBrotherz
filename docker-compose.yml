@@ -11,6 +11,8 @@ services:
       - app1
       - app2
       - app3
+      - app4
+      - app5
     restart: always
 
   # Nginx Prometheus Exporter
@@ -61,6 +63,26 @@ services:
         condition: service_started
     restart: always
 
+  app4:
+    build: .
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: always
+
+  app5:
+    build: .
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: always
+
   # PostgreSQL - Primary database
   postgres:
     image: postgres:16-alpine
@@ -68,6 +90,8 @@ services:
       - POSTGRES_DB=hackathon_db
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
+      - POSTGRES_MAX_CONNECTIONS=500
+    command: postgres -c max_connections=500
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

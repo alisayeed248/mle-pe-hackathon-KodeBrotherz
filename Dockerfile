@@ -21,5 +21,5 @@ RUN mkdir -p /tmp/prometheus_multiproc
 # Expose port
 EXPOSE 5000
 
-# Run with gunicorn
+# Run with gunicorn using gevent workers
 CMD ["uv", "run", "gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--access-logfile", "-", "run:app"]
