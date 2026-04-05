@@ -1,27 +1,136 @@
 groups:
-  - name: service_alerts
+  # =============================================================================
+  # CRITICAL ALERTS - Wake up the on-call engineer immediately
+  # These indicate the service is DOWN or severely degraded
+  # =============================================================================
+  - name: critical_alerts
     rules:
-      # Service Down - fires when any Flask app is unreachable for 1 minute
+      # Flask app instance is unreachable
+      # TEST: docker compose stop app1
       - alert: ServiceDown
         expr: up{job="flask"} == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "Service {{ $labels.instance }} is down"
-          description: "{{ $labels.instance }} has been unreachable for more than 1 minute."
+          summary: "Flask app {{ $labels.instance }} is DOWN"
+          description: "{{ $labels.instance }} has been unreachable for more than 1 minute. Check if container crashed or health check is failing."
+          runbook: "1. Check container status: docker compose ps\n2. Check logs: docker compose logs {{ $labels.instance | reReplaceAll \":.*\" \"\" }}\n3. Restart if needed: docker compose restart {{ $labels.instance | reReplaceAll \":.*\" \"\" }}"
 
-      # High Error Rate - fires when error rate exceeds 10% for 2 minutes
-      - alert: HighErrorRate
+      # Database is unreachable - detected via sustained DB errors from all instances
+      # TEST: docker compose stop postgres, then make requests
+      - alert: DatabaseDown
         expr: |
           (
-            sum(rate(http_errors_total[2m])) by (instance)
+            sum(rate(db_errors_total[1m])) > 1
+            and
+            sum(rate(db_queries_total{status="success"}[1m])) == 0
+          )
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL database appears DOWN"
+          description: "All database queries are failing with no successful queries. Database is likely unreachable."
+          runbook: "1. Check postgres container: docker compose ps postgres\n2. Check logs: docker compose logs postgres\n3. Check disk space and connections"
+
+      # All Flask instances returning errors (complete service failure)
+      # TEST: Break the app code or DB connection
+      - alert: AllInstancesErroring
+        expr: |
+          (
+            sum(rate(http_errors_total{status=~"5.."}[2m]))
             /
-            sum(rate(http_requests_total[2m])) by (instance)
-          ) > 0.10
+            sum(rate(http_requests_total[2m]))
+          ) > 0.5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Over 50% of all requests are failing with 5xx errors"
+          description: "Widespread application failure. Error rate: {{ $value | humanizePercentage }}. This likely indicates a code bug, database issue, or infrastructure problem affecting all instances."
+
+  # =============================================================================
+  # WARNING ALERTS - Investigate soon, may escalate to critical
+  # =============================================================================
+  - name: warning_alerts
+    rules:
+      # High 5xx error rate from application (bugs, DB issues)
+      # TEST: Stop postgres while making requests
+      - alert: HighApplicationErrorRate
+        expr: |
+          (
+            sum(rate(http_errors_total{status=~"5.."}[2m]))
+            /
+            sum(rate(http_requests_total[2m]))
+          ) > 0.05
         for: 2m
         labels:
           severity: warning
         annotations:
-          summary: "High error rate on {{ $labels.instance }}"
-          description: "Error rate is above 10% (current: {{ $value | printf \"%.2f\" }}%) for more than 2 minutes."
+          summary: "High 5xx error rate: {{ $value | humanizePercentage }}"
+          description: "Application is returning server errors. Check logs for stack traces and database connectivity."
+
+      # Database query errors (connection issues, query failures)
+      # TEST: docker compose stop postgres (will cause DB errors before full down)
+      - alert: DatabaseErrors
+        expr: rate(db_errors_total[2m]) > 0.1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database errors detected"
+          description: 'Database operations are failing. Error rate: {{ $value | printf "%.2f" }}/sec. Check database connectivity and query logs.'
+
+      # High latency - users are suffering
+      # TEST: Run locust with high load to saturate workers
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[2m])) by (le)
+          ) > 2
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'High request latency: p95 = {{ $value | printf "%.2f" }}s'
+          description: "95th percentile latency exceeds 2 seconds. Users are experiencing slow responses. Check for resource saturation or upstream issues."
+
+      # High CPU usage - approaching capacity
+      # TEST: Run intensive load test
+      - alert: HighCPUUsage
+        expr: avg(system_cpu_percent) > 85
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'High CPU usage: {{ $value | printf "%.1f" }}%'
+          description: "System CPU usage is above 85% for 3+ minutes. Consider scaling up or investigating CPU-intensive operations."
+
+      # High memory usage - risk of OOM
+      - alert: HighMemoryUsage
+        expr: avg(system_memory_percent) > 85
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'High memory usage: {{ $value | printf "%.1f" }}%'
+          description: "System memory usage is above 85%. Risk of OOM killer. Check for memory leaks or scale up."
+
+  # =============================================================================
+  # INFO ALERTS - For awareness, doesn't require immediate action
+  # =============================================================================
+  - name: info_alerts
+    rules:
+      # Single instance down (others still serving traffic)
+      - alert: InstanceDegraded
+        expr: |
+          count(up{job="flask"} == 0) > 0
+          and
+          count(up{job="flask"} == 1) > 0
+        for: 2m
+        labels:
+          severity: info
+        annotations:
+          summary: "One or more Flask instances are down but service is operational"
+          description: "{{ $value }} instance(s) down. Service is degraded but still operational. Investigate during business hours."

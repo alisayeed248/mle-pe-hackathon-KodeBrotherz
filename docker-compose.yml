@@ -129,10 +129,21 @@ services:
     image: prom/alertmanager:latest
     ports:
       - "9093:9093"
+    environment:
+      - SMTP_FROM=${SMTP_FROM}
+      - SMTP_TO=${SMTP_TO}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
     volumes:
-      - ./infra/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./infra/alertmanager.yml:/etc/alertmanager/alertmanager.template.yml:ro
+    entrypoint: /bin/sh
     command:
-      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - -c
+      - |
+        sed -e "s|\$${SMTP_FROM}|$$SMTP_FROM|g" \
+            -e "s|\$${SMTP_TO}|$$SMTP_TO|g" \
+            -e "s|\$${SMTP_PASSWORD}|$$SMTP_PASSWORD|g" \
+            /etc/alertmanager/alertmanager.template.yml > /tmp/alertmanager.yml && \
+        /bin/alertmanager --config.file=/tmp/alertmanager.yml
     depends_on:
       - discord-webhook
     restart: always
