@@ -36,6 +36,8 @@ services:
       - DATABASE_PASSWORD=postgres
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+    volumes:
+      - chaos-state:/tmp/chaos
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,6 +48,8 @@ services:
   app2:
     build: .
     environment: *app-env
+    volumes:
+      - chaos-state:/tmp/chaos
     depends_on:
       postgres:
         condition: service_healthy
@@ -56,6 +60,8 @@ services:
   app3:
     build: .
     environment: *app-env
+    volumes:
+      - chaos-state:/tmp/chaos
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,6 +72,8 @@ services:
   app4:
     build: .
     environment: *app-env
+    volumes:
+      - chaos-state:/tmp/chaos
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,6 +84,8 @@ services:
   app5:
     build: .
     environment: *app-env
+    volumes:
+      - chaos-state:/tmp/chaos
     depends_on:
       postgres:
         condition: service_healthy
@@ -133,6 +143,7 @@ services:
       - SMTP_FROM=${SMTP_FROM}
       - SMTP_TO=${SMTP_TO}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - PAGERDUTY_KEY=${PAGERDUTY_KEY}
     volumes:
       - ./infra/alertmanager.yml:/etc/alertmanager/alertmanager.template.yml:ro
     entrypoint: /bin/sh
@@ -142,6 +153,7 @@ services:
         sed -e "s|\$${SMTP_FROM}|$$SMTP_FROM|g" \
             -e "s|\$${SMTP_TO}|$$SMTP_TO|g" \
             -e "s|\$${SMTP_PASSWORD}|$$SMTP_PASSWORD|g" \
+            -e "s|\$${PAGERDUTY_KEY}|$$PAGERDUTY_KEY|g" \
             /etc/alertmanager/alertmanager.template.yml > /tmp/alertmanager.yml && \
         /bin/alertmanager --config.file=/tmp/alertmanager.yml
     depends_on:
@@ -199,3 +211,4 @@ volumes:
   prometheus_data:
   grafana_data:
   loki_data:
+  chaos-state:

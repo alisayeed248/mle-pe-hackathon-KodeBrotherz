@@ -29,7 +29,7 @@ route:
       continue: false
 
 receivers:
-  # Critical: Discord + Email (wake up the engineer!)
+  # Critical: Discord + Email + PagerDuty (wake up the engineer!)
   - name: 'critical-alerts'
     webhook_configs:
       - url: 'http://discord-webhook:9094'
@@ -55,6 +55,9 @@ receivers:
           {{ end }}
           <hr>
           <p><a href="http://localhost:3000">Grafana Dashboard</a> | <a href="http://localhost:9090/alerts">Prometheus Alerts</a></p>
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_KEY}'
+        send_resolved: true
 
   # Warning/Info: Discord only
   - name: 'discord'

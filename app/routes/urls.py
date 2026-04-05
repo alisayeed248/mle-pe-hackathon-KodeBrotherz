@@ -1,11 +1,13 @@
 import os
 import json
+import time
 from datetime import datetime, timezone
 
 import redis
 from flask import Blueprint, jsonify, redirect, request
 
 from app.errors import ConflictError, GoneError, NotFoundError, ValidationError
+from app.routes.chaos import get_chaos_state
 from app.models.url import URL
 from app.services import (
     generate_short_code,
@@ -18,11 +20,15 @@ from app.logging_config import get_logger
 urls_bp = Blueprint("urls", __name__)
 logger = get_logger("urls")
 
-# Redis connection
+# Redis connection with timeouts and no retries to prevent blocking when Redis is down
 redis_client = redis.Redis(
     host=os.getenv("REDIS_HOST", "localhost"),
     port=int(os.getenv("REDIS_PORT", 6379)),
     decode_responses=True,
+    socket_timeout=0.5,      # 500ms timeout for operations
+    socket_connect_timeout=0.5,  # 500ms timeout for connection
+    retry_on_timeout=False,  # Don't retry - fail fast
+    retry=None,              # Disable retry mechanism entirely
 )
 CACHE_TTL = 300  # cache entries for 5 minutes
 
@@ -69,14 +75,22 @@ def shorten_url():
             short_code=short_code,
         )
 
-    # Cache the new URL immediately
-    cache_data = {
-        "original_url": url_record.original_url,
-        "is_active": url_record.is_active,
-        "expires_at": url_record.expires_at.isoformat() if url_record.expires_at else None,
-        "id": url_record.id,
-    }
-    redis_client.setex(f"url:{short_code}", CACHE_TTL, json.dumps(cache_data))
+    # Cache the new URL immediately (if Redis is available)
+    try:
+        cache_data = {
+            "original_url": url_record.original_url,
+            "is_active": url_record.is_active,
+            "expires_at": url_record.expires_at.isoformat() if url_record.expires_at else None,
+            "id": url_record.id,
+        }
+        redis_client.setex(f"url:{short_code}", CACHE_TTL, json.dumps(cache_data))
+    except Exception as e:
+        logger.warning("Redis unavailable, skipping cache write", extra={
+            "component": "cache",
+            "short_code": short_code,
+            "redis_down": True,
+            "error": str(e)
+        })
 
     short_url = f"{request.host_url}{short_code}"
 
@@ -94,8 +108,32 @@ def shorten_url():
 @urls_bp.route("/<code>", methods=["GET"])
 def redirect_url(code: str):
     """Redirect to the original URL."""
-    # Check cache first
-    cached = redis_client.get(f"url:{code}")
+    # Check for chaos injection - slow responses
+    chaos = get_chaos_state()
+    if chaos["slow_responses"]:
+        delay_sec = chaos["slow_response_delay"] / 1000
+        logger.warning("Slow response due to system degradation", extra={
+            "component": "performance",
+            "short_code": code,
+            "delay_ms": chaos["slow_response_delay"],
+            "degraded": True
+        })
+        time.sleep(delay_sec)
+
+    # Check cache first (with graceful fallback if Redis is down)
+    cached = None
+    redis_available = True
+    try:
+        cached = redis_client.get(f"url:{code}")
+    except Exception as e:
+        redis_available = False
+        logger.warning("Redis unavailable, falling back to database", extra={
+            "component": "cache",
+            "short_code": code,
+            "redis_down": True,
+            "error": str(e)
+        })
+
     if cached:
         data = json.loads(cached)
         logger.info("Cache hit", extra={"component": "cache", "short_code": code, "cache_hit": True})
@@ -111,7 +149,7 @@ def redirect_url(code: str):
         return redirect(data["original_url"], code=302)
 
     # Cache miss - hit the database
-    logger.info("Cache miss", extra={"component": "cache", "short_code": code, "cache_hit": False})
+    logger.info("Cache miss", extra={"component": "cache", "short_code": code, "cache_hit": False, "redis_down": not redis_available})
     with timed_db_operation("select"):
         url_record = URL.select().where(URL.short_code == code).first()
 
@@ -124,14 +162,18 @@ def redirect_url(code: str):
     if not url_record.is_active:
         raise GoneError("Short URL is no longer active")
 
-    # Store in cache for next time
-    cache_data = {
-        "original_url": url_record.original_url,
-        "is_active": url_record.is_active,
-        "expires_at": url_record.expires_at.isoformat() if url_record.expires_at else None,
-        "id": url_record.id,
-    }
-    redis_client.setex(f"url:{code}", CACHE_TTL, json.dumps(cache_data))
+    # Store in cache for next time (if Redis is available)
+    if redis_available:
+        try:
+            cache_data = {
+                "original_url": url_record.original_url,
+                "is_active": url_record.is_active,
+                "expires_at": url_record.expires_at.isoformat() if url_record.expires_at else None,
+                "id": url_record.id,
+            }
+            redis_client.setex(f"url:{code}", CACHE_TTL, json.dumps(cache_data))
+        except Exception:
+            pass  # Redis went down between check and write, ignore
 
     with timed_db_operation("update"):
         URL.update(click_count=URL.click_count + 1).where(URL.id == url_record.id).execute()
