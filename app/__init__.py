@@ -23,9 +23,11 @@ def create_app():
 
     # Create tables if they don't exist (handle race condition with multiple workers)
     from app.models.url import URL
+    from app.models.user import User
+    from app.models.event import Event
 
     try:
-        db.create_tables([URL], safe=True)
+        db.create_tables([User, URL, Event], safe=True)
         logger.info("Database tables initialized", extra={"component": "database"})
     except Exception:
         # Table already exists or being created by another worker - that's fine
