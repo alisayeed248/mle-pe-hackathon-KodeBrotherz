@@ -1,7 +1,15 @@
 import pytest
+from unittest.mock import patch
 from app import create_app
 from app.database import db
 from app.models.url import URL
+
+@pytest.fixture(autouse=True)
+def mock_redis():
+    with patch('app.routes.urls.redis_client') as mock:
+        mock.get.return_value = None
+        mock.setex.return_value = True
+        yield mock
 
 @pytest.fixture
 def app():
