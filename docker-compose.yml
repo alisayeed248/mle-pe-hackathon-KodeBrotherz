@@ -36,6 +36,8 @@ services:
       - DATABASE_PASSWORD=postgres
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+    volumes:
+      - chaos-state:/tmp/chaos
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,6 +48,8 @@ services:
   app2:
     build: .
     environment: *app-env
+    volumes:
+      - chaos-state:/tmp/chaos
     depends_on:
       postgres:
         condition: service_healthy
@@ -56,6 +60,8 @@ services:
   app3:
     build: .
     environment: *app-env
+    volumes:
+      - chaos-state:/tmp/chaos
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,6 +72,8 @@ services:
   app4:
     build: .
     environment: *app-env
+    volumes:
+      - chaos-state:/tmp/chaos
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,6 +84,8 @@ services:
   app5:
     build: .
     environment: *app-env
+    volumes:
+      - chaos-state:/tmp/chaos
     depends_on:
       postgres:
         condition: service_healthy
@@ -201,3 +211,4 @@ volumes:
   prometheus_data:
   grafana_data:
   loki_data:
+  chaos-state:
