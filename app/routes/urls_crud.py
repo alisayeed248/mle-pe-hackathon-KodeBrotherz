@@ -18,6 +18,26 @@ def utc_now():
     return datetime.now(timezone.utc)
 
 
+def validate_json_body():
+    """Validate that request has proper JSON body (Fractured Vessel)."""
+    content_type = request.content_type or ""
+    if request.method in ("POST", "PUT") and request.data:
+        if "application/json" not in content_type:
+            raise ValidationError("Content-Type must be application/json")
+        try:
+            data = request.get_json(force=True)
+            if data is None:
+                raise ValidationError("Request body must be valid JSON")
+            if not isinstance(data, dict):
+                raise ValidationError("Request body must be a JSON object")
+            return data
+        except Exception as e:
+            if "ValidationError" in str(type(e)):
+                raise
+            raise ValidationError("Request body must be valid JSON")
+    return request.get_json(silent=True) or {}
+
+
 @urls_crud_bp.route("", methods=["GET"])
 def list_urls():
     """List all URLs with optional filtering and pagination."""
@@ -55,15 +75,26 @@ def get_url(url_id: int):
 @urls_crud_bp.route("", methods=["POST"])
 def create_url():
     """Create a new URL."""
-    data = request.get_json(silent=True) or {}
+    data = validate_json_body()
 
     original_url = data.get("original_url")
     user_id = data.get("user_id")
     title = data.get("title")
     custom_code = data.get("short_code") or data.get("custom_code")
 
+    # Validate required fields (Deceitful Scroll)
     if not original_url:
         raise ValidationError("original_url is required")
+    if not isinstance(original_url, str):
+        raise ValidationError("original_url must be a string")
+
+    # Validate optional fields
+    if user_id is not None and not isinstance(user_id, int):
+        raise ValidationError("user_id must be an integer")
+    if title is not None and not isinstance(title, str):
+        raise ValidationError("title must be a string")
+    if custom_code is not None and not isinstance(custom_code, str):
+        raise ValidationError("short_code must be a string")
 
     # Generate short code if not provided
     if custom_code:
@@ -113,13 +144,19 @@ def update_url(url_id: int):
     if not url:
         raise NotFoundError("URL not found")
 
-    data = request.get_json(silent=True) or {}
+    data = validate_json_body()
 
     if "title" in data:
+        if data["title"] is not None and not isinstance(data["title"], str):
+            raise ValidationError("title must be a string")
         url.title = data["title"].strip() if data["title"] else None
     if "is_active" in data:
-        url.is_active = bool(data["is_active"])
+        if not isinstance(data["is_active"], bool):
+            raise ValidationError("is_active must be a boolean")
+        url.is_active = data["is_active"]
     if "original_url" in data:
+        if not isinstance(data["original_url"], str):
+            raise ValidationError("original_url must be a string")
         url.original_url = data["original_url"].strip()
 
     url.updated_at = utc_now()
