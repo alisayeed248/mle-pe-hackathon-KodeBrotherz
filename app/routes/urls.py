@@ -33,10 +33,30 @@ redis_client = redis.Redis(
 CACHE_TTL = 300  # cache entries for 5 minutes
 
 
+def validate_json_body():
+    """Validate that request has proper JSON body (Fractured Vessel)."""
+    content_type = request.content_type or ""
+    if request.method in ("POST", "PUT") and request.data:
+        if "application/json" not in content_type:
+            raise ValidationError("Content-Type must be application/json")
+        try:
+            data = request.get_json(force=True)
+            if data is None:
+                raise ValidationError("Request body must be valid JSON")
+            if not isinstance(data, dict):
+                raise ValidationError("Request body must be a JSON object")
+            return data
+        except Exception as e:
+            if "ValidationError" in str(type(e)):
+                raise
+            raise ValidationError("Request body must be valid JSON")
+    return request.get_json(silent=True) or {}
+
+
 @urls_bp.route("/shorten", methods=["POST"])
 def shorten_url():
     """Create a shortened URL."""
-    data = request.get_json(silent=True) or {}
+    data = validate_json_body()
 
     original_url = data.get("url")
     custom_code = data.get("custom_code")
@@ -143,6 +163,17 @@ def redirect_url(code: str):
         # Check if active
         if not data["is_active"]:
             raise GoneError("Short URL is no longer active")
+        # Record the redirect event (Unseen Observer)
+        from app.models.event import Event
+        Event.create(
+            url_id=data["id"],
+            event_type="redirect",
+            timestamp=datetime.now(timezone.utc),
+            details=json.dumps({
+                "short_code": code,
+                "destination": data["original_url"],
+            })
+        )
         # Increment click count in DB (async-ish, don't block redirect)
         with timed_db_operation("update"):
             URL.update(click_count=URL.click_count + 1).where(URL.id == data["id"]).execute()
@@ -161,6 +192,18 @@ def redirect_url(code: str):
 
     if not url_record.is_active:
         raise GoneError("Short URL is no longer active")
+
+    # Record the redirect event (Unseen Observer - every redirect must be logged)
+    from app.models.event import Event
+    Event.create(
+        url_id=url_record.id,
+        event_type="redirect",
+        timestamp=datetime.now(timezone.utc),
+        details=json.dumps({
+            "short_code": code,
+            "destination": url_record.original_url,
+        })
+    )
 
     # Store in cache for next time (if Redis is available)
     if redis_available:
