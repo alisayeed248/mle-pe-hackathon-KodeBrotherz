@@ -133,6 +133,7 @@ services:
       - SMTP_FROM=${SMTP_FROM}
       - SMTP_TO=${SMTP_TO}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - PAGERDUTY_KEY=${PAGERDUTY_KEY}
     volumes:
       - ./infra/alertmanager.yml:/etc/alertmanager/alertmanager.template.yml:ro
     entrypoint: /bin/sh
@@ -142,6 +143,7 @@ services:
         sed -e "s|\$${SMTP_FROM}|$$SMTP_FROM|g" \
             -e "s|\$${SMTP_TO}|$$SMTP_TO|g" \
             -e "s|\$${SMTP_PASSWORD}|$$SMTP_PASSWORD|g" \
+            -e "s|\$${PAGERDUTY_KEY}|$$PAGERDUTY_KEY|g" \
             /etc/alertmanager/alertmanager.template.yml > /tmp/alertmanager.yml && \
         /bin/alertmanager --config.file=/tmp/alertmanager.yml
     depends_on:
