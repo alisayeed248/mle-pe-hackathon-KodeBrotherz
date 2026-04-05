@@ -1,5 +1,6 @@
 import os
 import time
+import psutil
 from flask import Blueprint, Response
 
 # Check if we're in multiprocess mode (Gunicorn)
@@ -72,10 +73,57 @@ DB_ERRORS_TOTAL = Counter(
     ["error_type"]
 )
 
+# === System Metrics (CPU/RAM) ===
+SYSTEM_CPU_PERCENT = Gauge(
+    "system_cpu_percent",
+    "Current system CPU usage percentage",
+    multiprocess_mode='livesum'
+)
+
+SYSTEM_MEMORY_PERCENT = Gauge(
+    "system_memory_percent",
+    "Current system memory usage percentage",
+    multiprocess_mode='livesum'
+)
+
+SYSTEM_MEMORY_BYTES = Gauge(
+    "system_memory_used_bytes",
+    "Current system memory used in bytes",
+    multiprocess_mode='livesum'
+)
+
+PROCESS_CPU_PERCENT = Gauge(
+    "process_cpu_percent",
+    "Current process CPU usage percentage",
+    multiprocess_mode='livesum'
+)
+
+PROCESS_MEMORY_BYTES = Gauge(
+    "process_memory_bytes",
+    "Current process memory (RSS) in bytes",
+    multiprocess_mode='livesum'
+)
+
+
+def update_system_metrics():
+    """Update CPU and memory metrics."""
+    # System-wide metrics
+    SYSTEM_CPU_PERCENT.set(psutil.cpu_percent(interval=None))
+    memory = psutil.virtual_memory()
+    SYSTEM_MEMORY_PERCENT.set(memory.percent)
+    SYSTEM_MEMORY_BYTES.set(memory.used)
+
+    # Process-specific metrics
+    process = psutil.Process()
+    PROCESS_CPU_PERCENT.set(process.cpu_percent(interval=None))
+    PROCESS_MEMORY_BYTES.set(process.memory_info().rss)
+
 
 @metrics_bp.route("/metrics")
 def metrics():
     """Prometheus metrics endpoint."""
+    # Update system metrics on each scrape
+    update_system_metrics()
     return Response(get_metrics(), mimetype=CONTENT_TYPE_LATEST)
 
 
@@ -86,7 +134,7 @@ def start_request_tracking():
 
 
 def end_request_tracking(start_time, method, endpoint, status_code):
-    """Call at the end of each request."""
+    """Call at the end of each request. Returns latency in seconds."""
     ACTIVE_REQUESTS.dec()
     latency = time.perf_counter() - start_time
 
@@ -95,6 +143,8 @@ def end_request_tracking(start_time, method, endpoint, status_code):
 
     if status_code >= 400:
         ERROR_COUNT.labels(method=method, endpoint=endpoint, status=status_code).inc()
+
+    return latency
 
 
 # === Database instrumentation helpers ===

@@ -13,8 +13,10 @@ from app.services import (
     validate_url,
 )
 from app.db_instrumentation import timed_db_operation
+from app.logging_config import get_logger
 
 urls_bp = Blueprint("urls", __name__)
+logger = get_logger("urls")
 
 # Redis connection
 redis_client = redis.Redis(
@@ -78,6 +80,11 @@ def shorten_url():
 
     short_url = f"{request.host_url}{short_code}"
 
+    logger.info("URL shortened", extra={
+        "component": "urls",
+        "short_code": short_code,
+    })
+
     return (
         jsonify({"short_code": short_code, "short_url": short_url}),
         201,
@@ -91,6 +98,7 @@ def redirect_url(code: str):
     cached = redis_client.get(f"url:{code}")
     if cached:
         data = json.loads(cached)
+        logger.info("Cache hit", extra={"component": "cache", "short_code": code, "cache_hit": True})
         # Check if expired
         if data["expires_at"] and datetime.fromisoformat(data["expires_at"]) < datetime.now(timezone.utc):
             raise GoneError("Short URL has expired")
@@ -103,6 +111,7 @@ def redirect_url(code: str):
         return redirect(data["original_url"], code=302)
 
     # Cache miss - hit the database
+    logger.info("Cache miss", extra={"component": "cache", "short_code": code, "cache_hit": False})
     with timed_db_operation("select"):
         url_record = URL.select().where(URL.short_code == code).first()
 

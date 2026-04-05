@@ -10,6 +10,7 @@ dependencies = [
     "locust>=2.32",
     "peewee>=3.17",
     "prometheus-client>=0.24.1",
+    "psutil>=5.9",
     "psycopg2-binary>=2.9",
     "pytest>=9.0.2",
     "pytest-cov>=7.1.0",
