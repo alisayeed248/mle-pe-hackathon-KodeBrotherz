@@ -64,9 +64,38 @@ curl -X POST http://127.0.0.1/shorten \
 |--------|----------|-------------|
 | `GET` | `/health` | Health check |
 | `POST` | `/shorten` | Create short URL |
-| `GET` | `/<code>` | Redirect to original URL |
-| `GET` | `/<code>/stats` | Get URL statistics |
+| `GET` | `/{code}` | Redirect to original URL |
+| `GET` | `/{code}/stats` | Get URL statistics |
 | `GET` | `/metrics` | Prometheus metrics |
+
+### Users API
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/users` | List all users |
+| `POST` | `/users` | Create a user |
+| `GET` | `/users/{id}` | Get user by ID |
+| `PUT` | `/users/{id}` | Update user |
+| `DELETE` | `/users/{id}` | Delete user |
+| `POST` | `/users/bulk` | Bulk import users from CSV |
+
+### URLs CRUD API
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/urls` | List all URLs |
+| `POST` | `/urls` | Create a URL |
+| `GET` | `/urls/{id}` | Get URL by ID |
+| `PUT` | `/urls/{id}` | Update URL |
+| `DELETE` | `/urls/{id}` | Delete URL |
+
+### Events API
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/events` | List all events |
+| `POST` | `/events` | Create an event |
+| `GET` | `/events/{id}` | Get event by ID |
 
 ### POST /shorten
 
@@ -94,7 +123,7 @@ curl -X POST http://127.0.0.1/shorten \
   -d '{"url": "https://github.com", "custom_code": "gh"}'
 ```
 
-### GET /<code>/stats
+### GET /{code}/stats
 
 Get statistics for a short URL.
 
