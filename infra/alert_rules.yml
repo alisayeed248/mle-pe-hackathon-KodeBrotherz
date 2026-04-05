@@ -1,0 +1,27 @@
+groups:
+  - name: service_alerts
+    rules:
+      # Service Down - fires when any Flask app is unreachable for 1 minute
+      - alert: ServiceDown
+        expr: up{job="flask"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.instance }} is down"
+          description: "{{ $labels.instance }} has been unreachable for more than 1 minute."
+
+      # High Error Rate - fires when error rate exceeds 10% for 2 minutes
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_errors_total[2m])) by (instance)
+            /
+            sum(rate(http_requests_total[2m])) by (instance)
+          ) > 0.10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on {{ $labels.instance }}"
+          description: "Error rate is above 10% (current: {{ $value | printf \"%.2f\" }}%) for more than 2 minutes."

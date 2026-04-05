@@ -1,0 +1,29 @@
+{{ define "discord.message" }}
+{
+  "content": "{{ if eq .Status "firing" }}🚨 **ALERT FIRING**{{ else }}✅ **RESOLVED**{{ end }}",
+  "embeds": [
+    {{- $alerts := .Alerts -}}
+    {{- range $index, $alert := $alerts -}}
+    {{- if $index }},{{ end }}
+    {
+      "title": "{{ $alert.Labels.alertname }}",
+      "description": "{{ $alert.Annotations.summary }}\n\n{{ $alert.Annotations.description }}",
+      "color": {{ if eq $.Status "firing" }}15158332{{ else }}3066993{{ end }},
+      "fields": [
+        {
+          "name": "Severity",
+          "value": "{{ $alert.Labels.severity }}",
+          "inline": true
+        },
+        {
+          "name": "Instance",
+          "value": "{{ $alert.Labels.instance }}",
+          "inline": true
+        }
+      ],
+      "timestamp": "{{ $alert.StartsAt.Format "2006-01-02T15:04:05Z07:00" }}"
+    }
+    {{- end }}
+  ]
+}
+{{ end }}
